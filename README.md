@@ -21,61 +21,90 @@ project to remember it. muhasabah brings every project *to you*, every day.
 - **Light by design:** a project is just `{ name, color, tasks, status }`. Status is
   `active · backlog · done · dropped` — so parking something is a decision, not a leak.
 
-## Run it
+---
+
+## Run locally
 
 You need [Node](https://nodejs.org) 20+. No Docker, no database server required.
 
 ```bash
-git clone <this repo>
+git clone https://github.com/umairahmadh/muhasabah
 cd muhasabah
 npm install
-cp .env.example .env      # edit MUHASABAH_PASSWORD at minimum
-npm run dev               # http://localhost:5173
+cp .env.example .env      # set MUHASABAH_PASSWORD at minimum
+npm run dev               # → http://localhost:5173
 ```
 
-Production:
+Data lives in `muhasabah.db` (SQLite) next to the app. Backup = `cp muhasabah.db ~/backup.db`.
+
+---
+
+## Deploy free: Vercel + Neon (recommended)
+
+The simplest zero-cost personal deployment. No server to babysit, no disk to manage.
+
+### 1. Create a Neon database (free)
+
+1. Sign up at **[neon.tech](https://neon.tech)** — free tier is plenty for a personal app.
+2. Create a project → copy the **Connection string** from the dashboard.
+   It looks like:
+   ```
+   postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/dbname?sslmode=require
+   ```
+   Keep this — you'll need it in the next step.
+
+### 2. Deploy to Vercel (free)
+
+1. Push this repo to your GitHub (if not already).
+2. Go to **[vercel.com](https://vercel.com)** → **Add New Project** → import your repo.
+3. In **Environment Variables**, add:
+   | Key | Value |
+   |---|---|
+   | `DATABASE_URL` | your Neon connection string |
+   | `MUHASABAH_PASSWORD` | a strong password of your choice |
+4. Click **Deploy**.
+
+Tables are created automatically on first boot. No migrations, no CLI commands.
+
+Your app is live at `https://your-project.vercel.app`. Done.
+
+### Re-deploys
+
+Push a commit to `main` → Vercel auto-deploys. Your data stays in Neon untouched.
+
+---
+
+## Self-host on a VPS (SQLite, full file ownership)
+
+If you prefer owning the file and running it on your own box:
 
 ```bash
+git clone https://github.com/umairahmadh/muhasabah
+cd muhasabah
+npm install
 npm run build
-MUHASABAH_PASSWORD=your-secret node build   # serves on PORT (default 3000)
+MUHASABAH_PASSWORD=your-secret node build   # runs on PORT (default 3000)
 ```
 
-## Database
-
-muhasabah supports two backends, switched by environment variable:
-
-### Option 1 — SQLite (default, self-host)
-
-No extra config. A single `muhasabah.db` file sits next to the app.
-
+Keep it alive with `pm2`:
 ```bash
-cp muhasabah.db ~/backups/muhasabah-$(date +%F).db   # full backup
+npm install -g pm2
+pm2 start "node build" --name muhasabah
+pm2 save
 ```
 
-Run on any $4 VPS, Fly.io, Railway, or Render (needs a **persistent disk**).
-Point [Litestream](https://litestream.io) at the file for continuous off-site backup.
+Works on any $4/mo VPS (Hetzner, DigitalOcean, etc.), Fly.io (needs a persistent volume),
+or Railway. The SQLite file needs a **persistent disk** — don't use plain Vercel/Netlify
+without `DATABASE_URL` set.
 
-### Option 2 — Postgres / Neon (free serverless deploy)
-
-Set `DATABASE_URL` to a Postgres connection string and SQLite is never touched.
-[Neon](https://neon.tech) has a generous free tier and works with Vercel/Koyeb/Render.
-
-```bash
-# .env
-DATABASE_URL=postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/dbname?sslmode=require
-```
-
-Tables are created automatically on first start. No migrations to run.
-
-Deploy to [Vercel](https://vercel.com) (free): import repo → set `DATABASE_URL` +
-`MUHASABAH_PASSWORD` env vars → deploy. Done.
+---
 
 ## Config
 
 | Env var | Default | What |
 |---|---|---|
-| `MUHASABAH_PASSWORD` | `muhasabah` | The single login password. **Change it.** |
-| `DATABASE_URL` | *(unset)* | Postgres connection string. Omit to use SQLite. |
+| `MUHASABAH_PASSWORD` | `muhasabah` | Single login password. **Change this.** |
+| `DATABASE_URL` | *(unset)* | Postgres/Neon connection string. Omit to use SQLite. |
 | `MUHASABAH_DB` | `./muhasabah.db` | SQLite file path (ignored when `DATABASE_URL` is set). |
 | `PORT` | `3000` | Port for `node build`. |
 
