@@ -69,3 +69,9 @@ The daily ritual is the soul of the app and is **not implemented yet**:
   diary of days.
 - Backlog projects that "knock" after long silence instead of nagging daily.
 - Weekly/monthly zoom-out: what moved, what went cold, what you dropped.
+
+## Branches
+
+- `main` — the published OSS app: **single-user**, one password. This is the product.
+- `saas-experiment` — PARKED WIP: multi-tenant (users table, `user_id` scoping,
+  signup/login). Not merged. Revisit only if we deliberately choose to go hosted.
