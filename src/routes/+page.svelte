@@ -7,18 +7,21 @@
 	let picked = $state(colors[0]);
 
 	// staleness: how long since last touched -> a fading dot + words
+	// iso may be a JS Date (Postgres) or a string (SQLite) — handle both
+	function toMs(iso) {
+		if (!iso) return Date.now();
+		return iso instanceof Date ? iso.getTime() : new Date(iso.replace(' ', 'T') + 'Z').getTime();
+	}
 	function ago(iso) {
 		if (!iso) return '';
-		const then = new Date(iso.replace(' ', 'T') + 'Z').getTime();
-		const days = Math.floor((Date.now() - then) / 86_400_000);
+		const days = Math.floor((Date.now() - toMs(iso)) / 86_400_000);
 		if (days <= 0) return 'today';
 		if (days === 1) return 'yesterday';
 		return `${days}d ago`;
 	}
 	function staleDays(iso) {
 		if (!iso) return 0;
-		const then = new Date(iso.replace(' ', 'T') + 'Z').getTime();
-		return Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
+		return Math.max(0, Math.floor((Date.now() - toMs(iso)) / 86_400_000));
 	}
 	// fresh = bright, cold = faded grey. Information, not punishment.
 	function pulse(iso) {
