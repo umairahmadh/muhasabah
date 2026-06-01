@@ -7,7 +7,7 @@ export const actions = {
 		if (!checkPassword(data.get('password'))) {
 			return fail(401, { error: 'Wrong password.' });
 		}
-		cookies.set(COOKIE, makeToken(), {
+		cookies.set(COOKIE, await makeToken(), {
 			path: '/',
 			httpOnly: true,
 			sameSite: 'lax',

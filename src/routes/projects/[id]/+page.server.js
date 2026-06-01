@@ -10,10 +10,10 @@ import {
 	deleteProject
 } from '$lib/server/db.js';
 
-export function load({ params }) {
-	const project = getProject(Number(params.id));
+export async function load({ params }) {
+	const project = await getProject(Number(params.id));
 	if (!project) throw error(404, 'No such project');
-	return { project, tasks: listTasks(project.id) };
+	return { project, tasks: await listTasks(project.id) };
 }
 
 export const actions = {
@@ -21,31 +21,31 @@ export const actions = {
 		const data = await request.formData();
 		const title = String(data.get('title') ?? '').trim();
 		if (!title) return fail(400, { error: 'Empty task.' });
-		createTask(Number(params.id), title);
+		await createTask(Number(params.id), title);
 		return { ok: true };
 	},
 	toggle: async ({ request }) => {
 		const data = await request.formData();
-		toggleTask(Number(data.get('id')));
+		await toggleTask(Number(data.get('id')));
 		return { ok: true };
 	},
 	star: async ({ request }) => {
 		const data = await request.formData();
-		toggleStar(Number(data.get('id')));
+		await toggleStar(Number(data.get('id')));
 		return { ok: true };
 	},
 	removeTask: async ({ request }) => {
 		const data = await request.formData();
-		deleteTask(Number(data.get('id')));
+		await deleteTask(Number(data.get('id')));
 		return { ok: true };
 	},
 	setStatus: async ({ request, params }) => {
 		const data = await request.formData();
-		setProjectStatus(Number(params.id), String(data.get('status')));
+		await setProjectStatus(Number(params.id), String(data.get('status')));
 		return { ok: true };
 	},
 	removeProject: async ({ params }) => {
-		deleteProject(Number(params.id));
+		await deleteProject(Number(params.id));
 		throw redirect(303, '/');
 	}
 };

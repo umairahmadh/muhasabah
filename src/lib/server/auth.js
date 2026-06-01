@@ -1,6 +1,6 @@
 // Single-user auth. No accounts, no users table — one password from env.
-// The session cookie holds an HMAC token derived from the server secret;
-// we just check it equals the expected token. That's the whole system.
+// Session cookie: "userId.HMAC(secret, password)" — stateless signed token.
+// getSessionSecret() is async (DB call), so all functions here are async.
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getSessionSecret } from './db.js';
@@ -11,8 +11,9 @@ function password() {
 	return process.env.MUHASABAH_PASSWORD || 'muhasabah';
 }
 
-function expectedToken() {
-	return createHmac('sha256', getSessionSecret()).update(password()).digest('hex');
+async function expectedToken() {
+	const secret = await getSessionSecret();
+	return createHmac('sha256', secret).update(password()).digest('hex');
 }
 
 export function checkPassword(input) {
@@ -21,13 +22,14 @@ export function checkPassword(input) {
 	return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function makeToken() {
+export async function makeToken() {
 	return expectedToken();
 }
 
-export function isValidToken(token) {
+export async function isValidToken(token) {
 	if (!token) return false;
+	const expected = await expectedToken();
 	const a = Buffer.from(token);
-	const b = Buffer.from(expectedToken());
+	const b = Buffer.from(expected);
 	return a.length === b.length && timingSafeEqual(a, b);
 }

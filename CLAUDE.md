@@ -19,14 +19,21 @@ A project = `{ name, color, note, status, tasks[] }`. Status ∈
 - **SQLite** via `better-sqlite3`, one file (`muhasabah.db`).
 - **Single-password auth**, HMAC session cookie. No users table.
 
-## The one hard architectural rule
+## The DB adapter rule
 
-**All DB access goes through [src/lib/server/db.js](src/lib/server/db.js).** Nothing
-else imports `better-sqlite3`. This keeps the door open to swap in Turso/libSQL later
-by reimplementing only that file. Therefore:
+`src/lib/server/db.js` is a **thin router** — it detects `DATABASE_URL` and
+re-exports from the right adapter. **Never import a DB driver directly in routes.**
 
-- Keep SQL **plain SQLite**. No Postgres-isms, no ORM, no SQLite-only extensions.
-- New data access = a new named function in `db.js`, not a raw query in a route.
+| File | What |
+|---|---|
+| `db.js` | Router: re-exports from sqlite or postgres adapter based on `DATABASE_URL` |
+| `db-sqlite.js` | `better-sqlite3` adapter (default, no env needed) |
+| `db-postgres.js` | `postgres` npm package adapter (Neon or any Postgres) |
+
+Both adapters export the **exact same async API**. Adding a new DB operation means
+adding it to both files with the same signature. Keep SQL compatible with both
+dialects where possible (mostly straightforward — main differences: `SERIAL` vs
+`INTEGER PRIMARY KEY`, `NOW()` vs `datetime('now')`, `BOOLEAN` vs `INTEGER 0/1`).
 
 ## Layout
 

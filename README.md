@@ -23,50 +23,65 @@ project to remember it. muhasabah brings every project *to you*, every day.
 
 ## Run it
 
-You need [Node](https://nodejs.org) 20+. That's the only dependency. No Docker, no
-database server, no cloud account.
+You need [Node](https://nodejs.org) 20+. No Docker, no database server required.
 
 ```bash
 git clone <this repo>
 cd muhasabah
 npm install
-cp .env.example .env      # then edit MUHASABAH_PASSWORD
+cp .env.example .env      # edit MUHASABAH_PASSWORD at minimum
 npm run dev               # http://localhost:5173
 ```
 
-For a real (production) run:
+Production:
 
 ```bash
 npm run build
 MUHASABAH_PASSWORD=your-secret node build   # serves on PORT (default 3000)
 ```
 
-Keep it alive on a server with `pm2 start "node build" --name muhasabah` or a systemd
-unit. Any $4 VPS, Fly.io, Railway, or Render works — it's just a Node process.
+## Database
 
-## Data & backup
+muhasabah supports two backends, switched by environment variable:
 
-Everything lives in **one SQLite file**, `muhasabah.db`, next to the app.
+### Option 1 — SQLite (default, self-host)
+
+No extra config. A single `muhasabah.db` file sits next to the app.
 
 ```bash
-cp muhasabah.db ~/backups/muhasabah-$(date +%F).db   # that's the whole backup story
+cp muhasabah.db ~/backups/muhasabah-$(date +%F).db   # full backup
 ```
 
-Move it, copy it, scp it, it's yours. (Want continuous off-site backup later? Point
-[Litestream](https://litestream.io) at the file — zero app changes.)
+Run on any $4 VPS, Fly.io, Railway, or Render (needs a **persistent disk**).
+Point [Litestream](https://litestream.io) at the file for continuous off-site backup.
+
+### Option 2 — Postgres / Neon (free serverless deploy)
+
+Set `DATABASE_URL` to a Postgres connection string and SQLite is never touched.
+[Neon](https://neon.tech) has a generous free tier and works with Vercel/Koyeb/Render.
+
+```bash
+# .env
+DATABASE_URL=postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/dbname?sslmode=require
+```
+
+Tables are created automatically on first start. No migrations to run.
+
+Deploy to [Vercel](https://vercel.com) (free): import repo → set `DATABASE_URL` +
+`MUHASABAH_PASSWORD` env vars → deploy. Done.
 
 ## Config
 
 | Env var | Default | What |
 |---|---|---|
 | `MUHASABAH_PASSWORD` | `muhasabah` | The single login password. **Change it.** |
-| `MUHASABAH_DB` | `./muhasabah.db` | Path to the SQLite file. |
+| `DATABASE_URL` | *(unset)* | Postgres connection string. Omit to use SQLite. |
+| `MUHASABAH_DB` | `./muhasabah.db` | SQLite file path (ignored when `DATABASE_URL` is set). |
 | `PORT` | `3000` | Port for `node build`. |
 
 ## Auth
 
-Single user. No accounts, no signup. One password → a signed session cookie. The
-whole auth system is [src/lib/server/auth.js](src/lib/server/auth.js), ~30 lines.
+Single user. One password → signed session cookie. No accounts, no signup.
 
 ## License
 
