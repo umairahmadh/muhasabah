@@ -1,33 +1,51 @@
-// Single-user auth. No accounts, no users table — one password from env.
-// The session cookie holds an HMAC token derived from the server secret;
-// we just check it equals the expected token. That's the whole system.
+// Multi-user auth, kept deliberately small.
+//
+// Passwords: scrypt with a per-user random salt, stored as "salt:hash".
+// Sessions: a stateless signed cookie "userId.HMAC(userId)" — no sessions
+// table. parseSessionToken returns the user id only if the signature checks.
 
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypto';
 import { getSessionSecret } from './db.js';
 
 export const COOKIE = 'muhasabah_session';
 
-function password() {
-	return process.env.MUHASABAH_PASSWORD || 'muhasabah';
+export function hashPassword(pw) {
+	const salt = randomBytes(16).toString('hex');
+	const hash = scryptSync(pw, salt, 64).toString('hex');
+	return `${salt}:${hash}`;
 }
 
-function expectedToken() {
-	return createHmac('sha256', getSessionSecret()).update(password()).digest('hex');
-}
-
-export function checkPassword(input) {
-	const a = Buffer.from(String(input ?? ''));
-	const b = Buffer.from(password());
+export function verifyPassword(pw, stored) {
+	const [salt, hash] = String(stored).split(':');
+	if (!salt || !hash) return false;
+	const a = scryptSync(pw, salt, 64);
+	const b = Buffer.from(hash, 'hex');
 	return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function makeToken() {
-	return expectedToken();
+function sign(value) {
+	return createHmac('sha256', getSessionSecret()).update(value).digest('hex');
 }
 
-export function isValidToken(token) {
-	if (!token) return false;
-	const a = Buffer.from(token);
-	const b = Buffer.from(expectedToken());
-	return a.length === b.length && timingSafeEqual(a, b);
+export function makeSessionToken(userId) {
+	const v = String(userId);
+	return `${v}.${sign(v)}`;
+}
+
+export function parseSessionToken(token) {
+	if (!token) return null;
+	const dot = token.lastIndexOf('.');
+	if (dot < 0) return null;
+	const value = token.slice(0, dot);
+	const sig = token.slice(dot + 1);
+	const expected = sign(value);
+	const a = Buffer.from(sig);
+	const b = Buffer.from(expected);
+	if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+	const id = Number(value);
+	return Number.isInteger(id) ? id : null;
+}
+
+export function validEmail(email) {
+	return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(email ?? ''));
 }

@@ -39,6 +39,7 @@
 			<div class="brand">muhasabah <span>✓</span></div>
 			<div class="muted small">
 				{data.counts.active} active · {data.counts.backlog} backlog · {data.counts.done} done
+				<span class="who"> · {data.email}</span>
 			</div>
 		</div>
 		<div class="actions">

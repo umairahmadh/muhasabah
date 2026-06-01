@@ -6,7 +6,7 @@
 <div class="screen">
 	<form method="POST" use:enhance class="card">
 		<div class="brand">muhasabah <span>✓</span></div>
-		<p class="muted">Welcome back. Your daily reckoning awaits.</p>
+		<p class="muted">Start your reckoning. One account, all your projects.</p>
 		<input
 			type="email"
 			name="email"
@@ -15,10 +15,10 @@
 			autofocus
 			autocomplete="email"
 		/>
-		<input type="password" name="password" placeholder="password" autocomplete="current-password" />
+		<input type="password" name="password" placeholder="password (8+ chars)" autocomplete="new-password" />
 		{#if form?.error}<p class="err">{form.error}</p>{/if}
-		<button class="primary" type="submit">Log in</button>
-		<p class="muted alt">No account? <a href="/signup">Sign up</a></p>
+		<button class="primary" type="submit">Create account</button>
+		<p class="muted alt">Already have one? <a href="/login">Log in</a></p>
 	</form>
 </div>
 

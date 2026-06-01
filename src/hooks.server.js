@@ -1,15 +1,17 @@
 import { redirect } from '@sveltejs/kit';
-import { COOKIE, isValidToken } from '$lib/server/auth.js';
+import { COOKIE, parseSessionToken } from '$lib/server/auth.js';
+import { getUserById } from '$lib/server/db.js';
+
+const PUBLIC = new Set(['/login', '/signup']);
 
 export async function handle({ event, resolve }) {
-	const authed = isValidToken(event.cookies.get(COOKIE));
-	event.locals.authed = authed;
+	const userId = parseSessionToken(event.cookies.get(COOKIE));
+	const user = userId ? getUserById(userId) : null;
+	event.locals.user = user ?? null;
 
-	const path = event.url.pathname;
-	const isLogin = path === '/login';
-
-	if (!authed && !isLogin) throw redirect(303, '/login');
-	if (authed && isLogin) throw redirect(303, '/');
+	const isPublic = PUBLIC.has(event.url.pathname);
+	if (!user && !isPublic) throw redirect(303, '/login');
+	if (user && isPublic) throw redirect(303, '/');
 
 	return resolve(event);
 }

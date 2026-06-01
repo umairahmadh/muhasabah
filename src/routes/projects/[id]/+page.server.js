@@ -10,42 +10,42 @@ import {
 	deleteProject
 } from '$lib/server/db.js';
 
-export function load({ params }) {
-	const project = getProject(Number(params.id));
+export function load({ params, locals }) {
+	const project = getProject(locals.user.id, Number(params.id));
 	if (!project) throw error(404, 'No such project');
-	return { project, tasks: listTasks(project.id) };
+	return { project, tasks: listTasks(locals.user.id, project.id) };
 }
 
 export const actions = {
-	addTask: async ({ request, params }) => {
+	addTask: async ({ request, params, locals }) => {
 		const data = await request.formData();
 		const title = String(data.get('title') ?? '').trim();
 		if (!title) return fail(400, { error: 'Empty task.' });
-		createTask(Number(params.id), title);
+		createTask(locals.user.id, Number(params.id), title);
 		return { ok: true };
 	},
-	toggle: async ({ request }) => {
+	toggle: async ({ request, locals }) => {
 		const data = await request.formData();
-		toggleTask(Number(data.get('id')));
+		toggleTask(locals.user.id, Number(data.get('id')));
 		return { ok: true };
 	},
-	star: async ({ request }) => {
+	star: async ({ request, locals }) => {
 		const data = await request.formData();
-		toggleStar(Number(data.get('id')));
+		toggleStar(locals.user.id, Number(data.get('id')));
 		return { ok: true };
 	},
-	removeTask: async ({ request }) => {
+	removeTask: async ({ request, locals }) => {
 		const data = await request.formData();
-		deleteTask(Number(data.get('id')));
+		deleteTask(locals.user.id, Number(data.get('id')));
 		return { ok: true };
 	},
-	setStatus: async ({ request, params }) => {
+	setStatus: async ({ request, params, locals }) => {
 		const data = await request.formData();
-		setProjectStatus(Number(params.id), String(data.get('status')));
+		setProjectStatus(locals.user.id, Number(params.id), String(data.get('status')));
 		return { ok: true };
 	},
-	removeProject: async ({ params }) => {
-		deleteProject(Number(params.id));
+	removeProject: async ({ params, locals }) => {
+		deleteProject(locals.user.id, Number(params.id));
 		throw redirect(303, '/');
 	}
 };
