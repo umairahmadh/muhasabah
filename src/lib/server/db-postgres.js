@@ -7,60 +7,68 @@ import { randomBytes } from 'node:crypto';
 
 const sql = postgres(process.env.DATABASE_URL, { ssl: 'require', onnotice: () => {} });
 
-await sql.unsafe(`
-	CREATE TABLE IF NOT EXISTS meta (
-		key   TEXT PRIMARY KEY,
-		value TEXT NOT NULL
+// Run each DDL statement individually so a pre-existing table/column
+// never silently aborts the rest of the migration.
+async function ddl(query) {
+	await sql.unsafe(query);
+}
+async function addCol(table, col, def) {
+	await sql.unsafe(
+		`DO $$ BEGIN ALTER TABLE ${table} ADD COLUMN ${col} ${def};
+		 EXCEPTION WHEN duplicate_column THEN NULL; END $$`
 	);
+}
 
-	CREATE TABLE IF NOT EXISTS projects (
-		id              SERIAL PRIMARY KEY,
-		name            TEXT NOT NULL,
-		note            TEXT NOT NULL DEFAULT '',
-		status          TEXT NOT NULL DEFAULT 'active',
-		color           TEXT NOT NULL DEFAULT '#6ea8fe',
-		created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-		last_touched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-	);
+await ddl(`CREATE TABLE IF NOT EXISTS meta (
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL
+)`);
 
-	CREATE TABLE IF NOT EXISTS tasks (
-		id          SERIAL PRIMARY KEY,
-		project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-		title       TEXT NOT NULL,
-		done        BOOLEAN NOT NULL DEFAULT FALSE,
-		starred     BOOLEAN NOT NULL DEFAULT FALSE,
-		position    INTEGER NOT NULL DEFAULT 0,
-		created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-		done_at     TIMESTAMPTZ
-	);
+await ddl(`CREATE TABLE IF NOT EXISTS projects (
+	id              SERIAL PRIMARY KEY,
+	name            TEXT NOT NULL,
+	note            TEXT NOT NULL DEFAULT '',
+	status          TEXT NOT NULL DEFAULT 'active',
+	color           TEXT NOT NULL DEFAULT '#6ea8fe',
+	created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	last_touched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`);
 
-	CREATE TABLE IF NOT EXISTS habits (
-		id               SERIAL PRIMARY KEY,
-		name             TEXT NOT NULL,
-		recurrence       TEXT NOT NULL DEFAULT 'daily',
-		recurrence_value INTEGER,
-		created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-	);
+await ddl(`CREATE TABLE IF NOT EXISTS tasks (
+	id          SERIAL PRIMARY KEY,
+	project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+	title       TEXT NOT NULL,
+	done        BOOLEAN NOT NULL DEFAULT FALSE,
+	starred     BOOLEAN NOT NULL DEFAULT FALSE,
+	position    INTEGER NOT NULL DEFAULT 0,
+	created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	done_at     TIMESTAMPTZ
+)`);
 
-	CREATE TABLE IF NOT EXISTS habit_logs (
-		id         SERIAL PRIMARY KEY,
-		habit_id   INTEGER NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
-		log_date   DATE NOT NULL,
-		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-		UNIQUE(habit_id, log_date)
-	);
+await ddl(`CREATE TABLE IF NOT EXISTS habits (
+	id               SERIAL PRIMARY KEY,
+	name             TEXT NOT NULL,
+	recurrence       TEXT NOT NULL DEFAULT 'daily',
+	recurrence_value INTEGER,
+	created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`);
 
-	CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
-	CREATE INDEX IF NOT EXISTS idx_habit_logs ON habit_logs(habit_id, log_date DESC);
-`);
+await ddl(`CREATE TABLE IF NOT EXISTS habit_logs (
+	id         SERIAL PRIMARY KEY,
+	habit_id   INTEGER NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+	log_date   DATE NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	UNIQUE(habit_id, log_date)
+)`);
 
-// Column migrations — idempotent via DO $$ EXCEPTION blocks
-await sql.unsafe(`
-	DO $$ BEGIN ALTER TABLE projects ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0; EXCEPTION WHEN duplicate_column THEN NULL; END $$;
-	DO $$ BEGIN ALTER TABLE tasks ADD COLUMN recurrence TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$;
-	DO $$ BEGIN ALTER TABLE tasks ADD COLUMN recurrence_days INTEGER; EXCEPTION WHEN duplicate_column THEN NULL; END $$;
-	DO $$ BEGIN ALTER TABLE tasks ADD COLUMN next_due DATE; EXCEPTION WHEN duplicate_column THEN NULL; END $$;
-`);
+await ddl(`CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id)`);
+await ddl(`CREATE INDEX IF NOT EXISTS idx_habit_logs ON habit_logs(habit_id, log_date DESC)`);
+
+// Column migrations — each in its own call, idempotent
+await addCol('projects', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+await addCol('tasks', 'recurrence', 'TEXT');
+await addCol('tasks', 'recurrence_days', 'INTEGER');
+await addCol('tasks', 'next_due', 'DATE');
 
 // --- helpers ---------------------------------------------------------------
 
