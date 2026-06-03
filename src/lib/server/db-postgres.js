@@ -5,7 +5,7 @@
 import postgres from 'postgres';
 import { randomBytes } from 'node:crypto';
 
-const sql = postgres(process.env.DATABASE_URL, { ssl: 'require' });
+const sql = postgres(process.env.DATABASE_URL, { ssl: 'require', onnotice: () => {} });
 
 await sql.unsafe(`
 	CREATE TABLE IF NOT EXISTS meta (
