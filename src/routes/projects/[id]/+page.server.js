@@ -21,7 +21,9 @@ export const actions = {
 		const data = await request.formData();
 		const title = String(data.get('title') ?? '').trim();
 		if (!title) return fail(400, { error: 'Empty task.' });
-		await createTask(Number(params.id), title);
+		const recurrence = String(data.get('recurrence') ?? '').trim() || null;
+		const recurrenceDays = recurrence === 'custom' ? Number(data.get('recurrence_days')) || null : null;
+		await createTask(Number(params.id), title, recurrence, recurrenceDays);
 		return { ok: true };
 	},
 	toggle: async ({ request }) => {
