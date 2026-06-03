@@ -9,8 +9,8 @@ mind**, so the home page ("the Wall") must show *every* active project's pulse a
 glance, and stale projects must surface themselves. We are NOT building Trello/Jira —
 no teams, no boards, no drag-drop columns. Keep it light.
 
-A project = `{ name, color, note, status, tasks[] }`. Status ∈
-`active | backlog | done | dropped`. Only `active` shows on the Wall.
+A project = `{ name, color, note, status, sort_order, tasks[] }`. Status ∈
+`active | backlog | done | dropped`. Only `active` shows on the Wall, ordered by `sort_order` (drag-to-reorder).
 
 ## Stack (decided, don't relitigate)
 
@@ -42,9 +42,10 @@ dialects where possible (mostly straightforward — main differences: `SERIAL` v
 | `src/lib/server/db.js` | Schema + every query. The only driver touch-point. |
 | `src/lib/server/auth.js` | Password check + session token. |
 | `src/hooks.server.js` | Auth guard: redirect to `/login` unless authed. |
-| `src/routes/+page.*` | The Wall (home): list/add projects, logout. |
+| `src/routes/+page.*` | The Wall (home): projects grid, habits strip, drag reorder. |
 | `src/routes/login/` | Login form + action. |
-| `src/routes/projects/[id]/` | Project detail: tasks, star, status, delete. |
+| `src/routes/habits/` | Habit manager: add/delete habits, 8-week grid, toggle today. |
+| `src/routes/projects/[id]/` | Project detail: tasks (including recurring), star, status, delete. |
 
 ## Conventions
 
@@ -69,9 +70,27 @@ npm run build        # must pass before committing
   `/Users/umairahmadh/.claude/projects/-Volumes-umair-PRJ-muhasabah/memory/` so nothing
   is forgotten between sessions.
 
+## Habits system
+
+- `habits` table: `id, name, recurrence (daily|weekly|monthly), recurrence_value, created_at`
+- `habit_logs` table: `id, habit_id, log_date (YYYY-MM-DD), created_at` — one row per completion
+- Miss count algorithm: for daily = `max(0, daysSinceLastDone - 1)`; weekly = `floor(days/7)`; monthly = `floor(days/30)`
+- Wall shows a compact strip with today's checkboxes + miss labels; `/habits` shows full management + 8-week grid
+
+## Recurring tasks
+
+Tasks have optional `recurrence (daily|weekly|monthly|custom)`, `recurrence_days`, `next_due (date)`.
+- When a recurring task is toggled done → it's **snoozed** (next_due set to future); never permanently done
+- When snoozed task is toggled → **un-snoozed** (next_due cleared, comes back now)
+- Project page splits tasks into: **recurring due** → **open** → **snoozed recurring** → **done**
+- Snoozed tasks don't count in the done/total progress ratio
+
+## Project reordering
+
+`projects.sort_order INTEGER` — Wall orders by `sort_order ASC`. Drag a card to reorder; drop fires `?/reorder` action with comma-separated IDs.
+
 ## Product backlog (not yet built)
 
-The daily ritual is the soul of the app and is **not implemented yet**:
 - A **Day / reckoning** view: tonight's tick-off + tomorrow's intentions, a scrollable
   diary of days.
 - Backlog projects that "knock" after long silence instead of nagging daily.
