@@ -1,19 +1,6 @@
 <script>
 	import { enhance } from '$app/forms';
-	let { data, form } = $props();
-
-	let showAdd = $state(false);
-	let newRecurrence = $state('daily');
-
-	// Close the add form when a habit is successfully created
-	$effect(() => {
-		if (form?.created) {
-			showAdd = false;
-			newRecurrence = 'daily';
-		}
-	});
-
-	const RECURRENCE_LABELS = { daily: 'daily', weekly: 'weekly', monthly: 'monthly' };
+	let { data } = $props();
 
 	function missLabel(h) {
 		if (h.missCount === 0) return '';
@@ -23,7 +10,6 @@
 		return n === 1 ? 'missed last month' : `missed ${n} months`;
 	}
 
-	// Build last-8-week grid (56 days) for a habit
 	function buildGrid(history) {
 		const set = new Set(history);
 		const today = new Date();
@@ -37,7 +23,6 @@
 		return days;
 	}
 
-	// Week labels for grid: Mon Tue Wed … (leftmost column)
 	const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 </script>
 
@@ -46,30 +31,26 @@
 
 	<header>
 		<h1>Habits</h1>
-		<button type="button" onclick={() => (showAdd = !showAdd)}>+ Add habit</button>
 	</header>
 
-	{#if showAdd}
-		<form
-			method="POST"
-			action="?/create"
-			use:enhance
-			class="addbar"
-		>
-			<input name="name" placeholder="Habit name…" autofocus autocomplete="off" />
-			<select name="recurrence" bind:value={newRecurrence}>
-				{#each Object.entries(RECURRENCE_LABELS) as [val, label]}
-					<option value={val}>{label}</option>
-				{/each}
+	<!-- <details> works without JS; use:enhance upgrades it progressively -->
+	<details class="add-wrap">
+		<summary>+ Add habit</summary>
+		<form method="POST" action="?/create" use:enhance class="addbar">
+			<input name="name" placeholder="Habit name…" autocomplete="off" />
+			<select name="recurrence">
+				<option value="daily">daily</option>
+				<option value="weekly">weekly</option>
+				<option value="monthly">monthly</option>
 			</select>
 			<button class="primary" type="submit">Add</button>
 		</form>
-	{/if}
+	</details>
 
 	{#if data.habits.length === 0}
 		<div class="empty">
 			<p>No habits tracked yet.</p>
-			<p class="muted">Add one above — daily, weekly, or monthly.</p>
+			<p class="muted">Use "Add habit" above — daily, weekly, or monthly.</p>
 		</div>
 	{:else}
 		{#each data.habits as h (h.id)}
@@ -108,7 +89,6 @@
 					</div>
 				</div>
 
-				<!-- 8-week grid -->
 				<div class="grid-wrap">
 					<div class="day-labels">
 						{#each DAY_LABELS as d}
@@ -128,8 +108,27 @@
 
 <style>
 	.back { display: inline-block; margin-bottom: 0.8rem; font-size: 0.9rem; }
-	header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+	header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
 	h1 { margin: 0; }
+
+	/* add-wrap details/summary toggle */
+	.add-wrap {
+		margin-bottom: 1rem;
+	}
+	.add-wrap summary {
+		display: inline-block;
+		cursor: pointer;
+		border: 1px solid var(--line);
+		background: var(--panel-2);
+		border-radius: 10px;
+		padding: 0.55rem 0.9rem;
+		font-size: inherit;
+		list-style: none;
+		user-select: none;
+	}
+	.add-wrap summary::-webkit-details-marker { display: none; }
+	.add-wrap summary:hover { border-color: var(--accent); }
+	.add-wrap[open] summary { border-color: var(--accent); color: var(--accent); }
 
 	.addbar {
 		display: flex;
@@ -137,9 +136,9 @@
 		align-items: center;
 		background: var(--panel);
 		border: 1px solid var(--line);
-		border-radius: var(--radius);
+		border-top: none;
+		border-radius: 0 0 var(--radius) var(--radius);
 		padding: 0.7rem;
-		margin-bottom: 1.25rem;
 	}
 	.addbar input { flex: 1; }
 	.addbar select {
@@ -200,7 +199,6 @@
 	.icon { border: none; background: transparent; padding: 0.2rem 0.4rem; color: var(--muted); }
 	.icon.del:hover { color: var(--hot); }
 
-	/* 8-week calendar grid */
 	.grid-wrap { display: flex; gap: 0.3rem; align-items: stretch; }
 
 	.day-labels {
