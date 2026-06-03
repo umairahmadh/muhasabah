@@ -34,8 +34,88 @@ await sql.unsafe(`
 		done_at     TIMESTAMPTZ
 	);
 
+	CREATE TABLE IF NOT EXISTS habits (
+		id               SERIAL PRIMARY KEY,
+		name             TEXT NOT NULL,
+		recurrence       TEXT NOT NULL DEFAULT 'daily',
+		recurrence_value INTEGER,
+		created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+	);
+
+	CREATE TABLE IF NOT EXISTS habit_logs (
+		id         SERIAL PRIMARY KEY,
+		habit_id   INTEGER NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+		log_date   DATE NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		UNIQUE(habit_id, log_date)
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+	CREATE INDEX IF NOT EXISTS idx_habit_logs ON habit_logs(habit_id, log_date DESC);
 `);
+
+// Column migrations — idempotent via DO $$ EXCEPTION blocks
+await sql.unsafe(`
+	DO $$ BEGIN ALTER TABLE projects ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0; EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+	DO $$ BEGIN ALTER TABLE tasks ADD COLUMN recurrence TEXT; EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+	DO $$ BEGIN ALTER TABLE tasks ADD COLUMN recurrence_days INTEGER; EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+	DO $$ BEGIN ALTER TABLE tasks ADD COLUMN next_due DATE; EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+`);
+
+// --- helpers ---------------------------------------------------------------
+
+function localDateStr() {
+	const d = new Date();
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function addDays(dateStr, n) {
+	const d = new Date(dateStr + 'T12:00:00');
+	d.setDate(d.getDate() + n);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function dateDiffDays(from, to) {
+	const a = new Date((from instanceof Date ? from.toISOString().slice(0, 10) : String(from)) + 'T00:00:00');
+	const b = new Date((to instanceof Date ? to.toISOString().slice(0, 10) : String(to)) + 'T00:00:00');
+	return Math.round((b - a) / 86_400_000);
+}
+
+function recurrenceDays(recurrence, customDays) {
+	if (recurrence === 'daily') return 1;
+	if (recurrence === 'weekly') return 7;
+	if (recurrence === 'monthly') return 30;
+	return Math.max(1, customDays || 7);
+}
+
+function toDateStr(val) {
+	if (!val) return null;
+	if (val instanceof Date) return val.toISOString().slice(0, 10);
+	return String(val).slice(0, 10);
+}
+
+function habitStats(habit, logs, today) {
+	const logDates = new Set(logs.map((l) => toDateStr(l.log_date)));
+	const doneToday = logDates.has(today);
+	const lastDoneRaw = logs[0]?.log_date ?? null;
+	const lastDone = toDateStr(lastDoneRaw);
+
+	const refDate = lastDone ?? toDateStr(habit.created_at) ?? today;
+	const daysSince = dateDiffDays(refDate, today);
+
+	let missCount = 0;
+	if (!doneToday) {
+		if (habit.recurrence === 'daily') {
+			missCount = Math.max(0, daysSince - 1);
+		} else if (habit.recurrence === 'weekly') {
+			missCount = Math.floor(daysSince / 7);
+		} else {
+			missCount = Math.floor(daysSince / 30);
+		}
+	}
+
+	return { doneToday, missCount, lastDone };
+}
 
 // --- meta ------------------------------------------------------------------
 
@@ -43,7 +123,6 @@ export async function getSessionSecret() {
 	const rows = await sql`SELECT value FROM meta WHERE key = 'session_secret'`;
 	if (rows.length) return rows[0].value;
 	const secret = randomBytes(32).toString('hex');
-	// ON CONFLICT guards against race conditions (unlikely for personal app, but correct)
 	await sql`INSERT INTO meta (key, value) VALUES ('session_secret', ${secret}) ON CONFLICT (key) DO NOTHING`;
 	const [row] = await sql`SELECT value FROM meta WHERE key = 'session_secret'`;
 	return row.value;
@@ -53,17 +132,20 @@ export async function getSessionSecret() {
 
 export async function listProjects(status = 'active') {
 	const projects = await sql`
-		SELECT * FROM projects WHERE status = ${status} ORDER BY last_touched_at ASC`;
+		SELECT * FROM projects WHERE status = ${status}
+		ORDER BY sort_order ASC, last_touched_at ASC`;
 
-	return Promise.all(projects.map(async (p) => {
-		const [{ n: total }]     = await sql`SELECT COUNT(*)::int n FROM tasks WHERE project_id = ${p.id}`;
-		const [{ n: done }]      = await sql`SELECT COUNT(*)::int n FROM tasks WHERE project_id = ${p.id} AND done = TRUE`;
-		const [{ n: doneToday }] = await sql`SELECT COUNT(*)::int n FROM tasks WHERE project_id = ${p.id} AND done = TRUE AND done_at::date = CURRENT_DATE`;
-		const [{ n: hot }]       = await sql`SELECT COUNT(*)::int n FROM tasks WHERE project_id = ${p.id} AND done = FALSE AND starred = TRUE`;
-		const next               = await sql`SELECT title FROM tasks WHERE project_id = ${p.id} AND done = FALSE ORDER BY starred DESC, position ASC, created_at ASC LIMIT 3`;
+	return Promise.all(
+		projects.map(async (p) => {
+			const [{ n: total }]     = await sql`SELECT COUNT(*)::int n FROM tasks WHERE project_id = ${p.id} AND (recurrence IS NULL OR next_due IS NULL OR next_due <= CURRENT_DATE)`;
+			const [{ n: done }]      = await sql`SELECT COUNT(*)::int n FROM tasks WHERE project_id = ${p.id} AND done = TRUE AND recurrence IS NULL`;
+			const [{ n: doneToday }] = await sql`SELECT COUNT(*)::int n FROM tasks WHERE project_id = ${p.id} AND done = TRUE AND recurrence IS NULL AND done_at::date = CURRENT_DATE`;
+			const [{ n: hot }]       = await sql`SELECT COUNT(*)::int n FROM tasks WHERE project_id = ${p.id} AND done = FALSE AND starred = TRUE AND (next_due IS NULL OR next_due <= CURRENT_DATE)`;
+			const next               = await sql`SELECT title FROM tasks WHERE project_id = ${p.id} AND done = FALSE AND (next_due IS NULL OR next_due <= CURRENT_DATE) ORDER BY starred DESC, position ASC, created_at ASC LIMIT 3`;
 
-		return { ...p, total, done, doneToday, hot, next: next.map((t) => t.title) };
-	}));
+			return { ...p, total, done, doneToday, hot, next: next.map((t) => t.title) };
+		})
+	);
 }
 
 export async function statusCounts() {
@@ -74,7 +156,10 @@ export async function statusCounts() {
 }
 
 export async function createProject(name, note = '', color = '#6ea8fe') {
-	const [{ id }] = await sql`INSERT INTO projects (name, note, color) VALUES (${name}, ${note}, ${color}) RETURNING id`;
+	const [{ m }] = await sql`SELECT COALESCE(MAX(sort_order), -1)::int m FROM projects WHERE status = 'active'`;
+	const [{ id }] = await sql`
+		INSERT INTO projects (name, note, color, sort_order)
+		VALUES (${name}, ${note}, ${color}, ${m + 1}) RETURNING id`;
 	return id;
 }
 
@@ -95,25 +180,54 @@ export async function deleteProject(id) {
 	await sql`DELETE FROM projects WHERE id = ${id}`;
 }
 
+export async function reorderProjects(ids) {
+	await Promise.all(ids.map((id, i) => sql`UPDATE projects SET sort_order = ${i} WHERE id = ${id}`));
+}
+
 // --- tasks -----------------------------------------------------------------
 
 export async function listTasks(projectId) {
 	return sql`
 		SELECT * FROM tasks WHERE project_id = ${projectId}
-		ORDER BY done ASC, starred DESC, position ASC, created_at ASC`;
+		ORDER BY
+			CASE
+				WHEN done = TRUE AND recurrence IS NULL THEN 3
+				WHEN recurrence IS NOT NULL AND next_due IS NOT NULL AND next_due > CURRENT_DATE THEN 2
+				ELSE 1
+			END ASC,
+			starred DESC, position ASC, created_at ASC`;
 }
 
-export async function createTask(projectId, title) {
+export async function createTask(projectId, title, recurrence = null, recurrenceDaysParam = null) {
 	const [{ m }] = await sql`SELECT COALESCE(MAX(position), 0)::int m FROM tasks WHERE project_id = ${projectId}`;
 	const [{ id }] = await sql`
-		INSERT INTO tasks (project_id, title, position) VALUES (${projectId}, ${title}, ${m + 1}) RETURNING id`;
+		INSERT INTO tasks (project_id, title, position, recurrence, recurrence_days)
+		VALUES (${projectId}, ${title}, ${m + 1}, ${recurrence || null}, ${recurrenceDaysParam || null})
+		RETURNING id`;
 	await touchProject(projectId);
 	return id;
 }
 
 export async function toggleTask(id) {
-	const [t] = await sql`SELECT done, project_id FROM tasks WHERE id = ${id}`;
+	const [t] = await sql`SELECT * FROM tasks WHERE id = ${id}`;
 	if (!t) return;
+
+	if (t.recurrence) {
+		const today = localDateStr();
+		const nextDueStr = toDateStr(t.next_due);
+		if (nextDueStr && nextDueStr > today) {
+			// Snoozed → un-snooze
+			await sql`UPDATE tasks SET next_due = NULL WHERE id = ${id}`;
+		} else {
+			// Due → snooze
+			const days = recurrenceDays(t.recurrence, t.recurrence_days);
+			const nextDue = addDays(today, days);
+			await sql`UPDATE tasks SET next_due = ${nextDue}, done_at = NOW() WHERE id = ${id}`;
+		}
+		await touchProject(t.project_id);
+		return;
+	}
+
 	const nowDone = !t.done;
 	await sql`UPDATE tasks SET done = ${nowDone}, done_at = ${nowDone ? new Date() : null} WHERE id = ${id}`;
 	await touchProject(t.project_id);
@@ -130,4 +244,54 @@ export async function deleteTask(id) {
 	const [t] = await sql`SELECT project_id FROM tasks WHERE id = ${id}`;
 	await sql`DELETE FROM tasks WHERE id = ${id}`;
 	if (t) await touchProject(t.project_id);
+}
+
+// --- habits ----------------------------------------------------------------
+
+export async function listHabits() {
+	const habits = await sql`SELECT * FROM habits ORDER BY id ASC`;
+	const today = localDateStr();
+
+	return Promise.all(
+		habits.map(async (h) => {
+			const logs = await sql`
+				SELECT log_date FROM habit_logs
+				WHERE habit_id = ${h.id}
+				ORDER BY log_date DESC LIMIT 365`;
+			return { ...h, ...habitStats(h, logs, today) };
+		})
+	);
+}
+
+export async function createHabit(name, recurrence, recurrenceValue = null) {
+	const [{ id }] = await sql`
+		INSERT INTO habits (name, recurrence, recurrence_value)
+		VALUES (${name}, ${recurrence}, ${recurrenceValue ?? null}) RETURNING id`;
+	return id;
+}
+
+export async function deleteHabit(id) {
+	await sql`DELETE FROM habits WHERE id = ${id}`;
+}
+
+export async function toggleHabitLog(habitId, date) {
+	const [existing] = await sql`
+		SELECT id FROM habit_logs WHERE habit_id = ${habitId} AND log_date = ${date}`;
+	if (existing) {
+		await sql`DELETE FROM habit_logs WHERE habit_id = ${habitId} AND log_date = ${date}`;
+		return false;
+	} else {
+		await sql`INSERT INTO habit_logs (habit_id, log_date) VALUES (${habitId}, ${date})`;
+		return true;
+	}
+}
+
+export async function getHabitHistory(habitId, days = 60) {
+	const today = localDateStr();
+	const from = addDays(today, -days);
+	const rows = await sql`
+		SELECT log_date FROM habit_logs
+		WHERE habit_id = ${habitId} AND log_date >= ${from}
+		ORDER BY log_date DESC`;
+	return rows.map((r) => toDateStr(r.log_date));
 }

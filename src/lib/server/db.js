@@ -15,9 +15,15 @@ export const {
 	getProject,
 	setProjectStatus,
 	deleteProject,
+	reorderProjects,
 	listTasks,
 	createTask,
 	toggleTask,
 	toggleStar,
-	deleteTask
+	deleteTask,
+	listHabits,
+	createHabit,
+	deleteHabit,
+	toggleHabitLog,
+	getHabitHistory
 } = adapter;
