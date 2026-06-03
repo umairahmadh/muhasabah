@@ -1,9 +1,17 @@
 <script>
 	import { enhance } from '$app/forms';
-	let { data } = $props();
+	let { data, form } = $props();
 
 	let showAdd = $state(false);
 	let newRecurrence = $state('daily');
+
+	// Close the add form when a habit is successfully created
+	$effect(() => {
+		if (form?.created) {
+			showAdd = false;
+			newRecurrence = 'daily';
+		}
+	});
 
 	const RECURRENCE_LABELS = { daily: 'daily', weekly: 'weekly', monthly: 'monthly' };
 
@@ -38,18 +46,14 @@
 
 	<header>
 		<h1>Habits</h1>
-		<button onclick={() => (showAdd = !showAdd)}>+ Add habit</button>
+		<button type="button" onclick={() => (showAdd = !showAdd)}>+ Add habit</button>
 	</header>
 
 	{#if showAdd}
 		<form
 			method="POST"
 			action="?/create"
-			use:enhance={() => async ({ update }) => {
-				await update();
-				showAdd = false;
-				newRecurrence = 'daily';
-			}}
+			use:enhance
 			class="addbar"
 		>
 			<input name="name" placeholder="Habit name…" autofocus autocomplete="off" />
